@@ -119,22 +119,70 @@ void setup()
     Serial.println("Bluetooth Started! Pair your device.");
 }
 
-/********************************************************************************/
-void loop()
-{
+
+void loop() {
+    /* Update all the values */
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+
+    accX = a.acceleration.x;
+    accY = a.acceleration.y;
+    accZ = a.acceleration.z;
+
+    gyroX = g.gyro.x;
+    gyroY = g.gyro.y;
+    gyroZ = g.gyro.z;
+
+    double dt = (double)(micros() - timer) / 1000000; // Calculate delta time
+    timer = micros();
+
+    double roll  = atan2(accY, accZ) * RAD_TO_DEG;
+    double pitch = atan(-accX / sqrt(accY * accY + accZ * accZ)) * RAD_TO_DEG;
+
+    double gyroXrate = gyroX / 131.0; // Convert to deg/s
+    double gyroYrate = gyroY / 131.0; // Convert to deg/s
+
+  // This fixes the transition problem when the accelerometer angle jumps between -180 and 180 degrees
+    if ((roll < -90 && kalAngleX > 90) || (roll > 90 && kalAngleX < -90)) {
+        kalmanX.setAngle(roll);
+        compAngleX = roll;
+        kalAngleX = roll;
+        gyroXangle = roll;
+    } else
+        kalAngleX = kalmanX.getAngle(roll, gyroXrate, dt); // Calculate the angle using a Kalman filter
+
+    if (abs(kalAngleX) > 90)
+        gyroYrate = -gyroYrate; // Invert rate, so it fits the restriced accelerometer reading
+    kalAngleY = kalmanY.getAngle(pitch, gyroYrate, dt);
+
+    gyroXangle += gyroXrate * dt; // Calculate gyro angle without any filter
+    gyroYangle += gyroYrate * dt;
+    //gyroXangle += kalmanX.getRate() * dt; // Calculate gyro angle using the unbiased rate
+    //gyroYangle += kalmanY.getRate() * dt;
+
+    compAngleX = 0.93 * (compAngleX + gyroXrate * dt) + 0.07 * roll; // Calculate the angle using a Complimentary filter
+    compAngleY = 0.93 * (compAngleY + gyroYrate * dt) + 0.07 * pitch;
+
+    // Reset the gyro angle when it has drifted too much
+    if (gyroXangle < -180 || gyroXangle > 180)
+        gyroXangle = kalAngleX;
+    if (gyroYangle < -180 || gyroYangle > 180)
+        gyroYangle = kalAngleY;
+
     // Get the current time
-  unsigned long currentMillis = millis();
+    unsigned long currentMillis = millis();
 
-  // Check if 1 second has passed since last transmission
-  if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;  // Save the current time
+    // Check if 1 second has passed since last transmission
+    if (currentMillis - previousMillis >= interval) {
+        previousMillis = currentMillis;  // Save the current time
 
-    // Automatically generate and send data
-    String data = "Counter value: " + String(millis() / 1000) + " seconds\n";
-    
-    SerialBT.print(data);  // Send the data over Bluetooth
-    Serial.print(data);    // Also print to the Serial Monitor
-  }
+        // Automatically generate and send data
+        String data = "Counter value: " + String(millis() / 1000) + " seconds\n";
+
+        String angles = "Roll: " + String(kalAngleX) + ", Pitch: " + String(kalAngleY);
+
+        SerialBT.print(angles);  // Send the data over Bluetooth
+    }
 
   // Other non-blocking tasks can go here
   //DETECT THE DISTANCE READ BY THE DISTANCE SENSOR
