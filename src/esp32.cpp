@@ -15,6 +15,9 @@
 */
 
 #include "BluetoothSerial.h"
+#include <Wire.h>
+#include "Kalman.h" // Source: https://github.com/TKJElectronics/KalmanFilter
+#include <Adafruit_MPU6050.h>
 
 BluetoothSerial SerialBT;
 unsigned long previousMillis = 0;  // Store the last time data was sent
