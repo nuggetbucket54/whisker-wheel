@@ -3,6 +3,7 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+.vscode/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
