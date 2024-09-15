@@ -19,6 +19,23 @@
 #include "Kalman.h" // Source: https://github.com/TKJElectronics/KalmanFilter
 #include <Adafruit_MPU6050.h>
 
+#define RESTRICT_PITCH // Comment out to restrict roll to ±90deg instead - please read: http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf
+
+Adafruit_MPU6050 mpu;
+Kalman kalmanX; // Create the Kalman instances
+Kalman kalmanY;
+
+/* IMU Data */
+double accX, accY, accZ;
+double gyroX, gyroY, gyroZ;
+int16_t tempRaw;
+
+double gyroXangle, gyroYangle; // Angle calculate using the gyro only
+double compAngleX, compAngleY; // Calculated angle using a complementary filter
+double kalAngleX, kalAngleY; // Calculated angle using a Kalman filter
+
+uint32_t timer;
+
 BluetoothSerial SerialBT;
 unsigned long previousMillis = 0;  // Store the last time data was sent
 const long interval = 1000;  // Interval to send data (1 second)
@@ -52,25 +69,54 @@ int turnTime = 200;             //amount that the robot will turn once it has ba
 /********************************************************************************/
 void setup()
 {
-  pinMode(trigPin, OUTPUT);       //this pin will send ultrasonic pulses out from the distance sensor
-  pinMode(echoPin, INPUT);        //this pin will sense when the pulses reflect back to the distance sensor
+    pinMode(trigPin, OUTPUT);       //this pin will send ultrasonic pulses out from the distance sensor
+    pinMode(echoPin, INPUT);        //this pin will sense when the pulses reflect back to the distance sensor
 
-  pinMode(switchPin, INPUT_PULLUP);   //set this as a pullup to sense whether the switch is flipped
+    pinMode(switchPin, INPUT_PULLUP);   //set this as a pullup to sense whether the switch is flipped
 
+    //set the motor control pins as outputs
+    pinMode(AIN1, OUTPUT);
+    pinMode(AIN2, OUTPUT);
+    pinMode(PWMA, OUTPUT);
 
-  //set the motor control pins as outputs
-  pinMode(AIN1, OUTPUT);
-  pinMode(AIN2, OUTPUT);
-  pinMode(PWMA, OUTPUT);
+    pinMode(BIN1, OUTPUT);
+    pinMode(BIN2, OUTPUT);
+    pinMode(PWMB, OUTPUT);
 
-  pinMode(BIN1, OUTPUT);
-  pinMode(BIN2, OUTPUT);
-  pinMode(PWMB, OUTPUT);
+    Serial.begin(115200);   
+    Wire.begin();
+  
+    while (!mpu.begin()) {
+        delay(500);
+    }
 
-  Serial.begin(115200);                       //begin serial communication with the computer
-  Serial.print("To infinity and beyond!");  //test the serial connection
-  SerialBT.begin("ESP32_BT");  // Name the device as "ESP32_BT"
-  Serial.println("Bluetooth Started! Pair your device.");
+    mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
+    mpu.setGyroRange(MPU6050_RANGE_250_DEG);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+
+    /* Set kalman and gyro starting angle */
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+    accX = a.acceleration.x;
+    accY = a.acceleration.y;
+    accZ = a.acceleration.z;
+
+    double roll  = atan2(accY, accZ) * RAD_TO_DEG;
+    double pitch = atan(-accX / sqrt(accY * accY + accZ * accZ)) * RAD_TO_DEG;
+
+    kalmanX.setAngle(roll); // Set starting angle
+    kalmanY.setAngle(pitch);
+    gyroXangle = roll;
+    gyroYangle = pitch;
+    compAngleX = roll;
+    compAngleY = pitch;
+
+    timer = micros();
+
+    //begin serial communication with the computer
+    Serial.print("To infinity and beyond!");  //test the serial connection
+    SerialBT.begin("ESP32_BT");  // Name the device as "ESP32_BT"
+    Serial.println("Bluetooth Started! Pair your device.");
 }
 
 /********************************************************************************/
